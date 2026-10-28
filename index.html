@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reading log</title>
+<meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151514" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Reading log">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #faf9f6; --fg: #1c1b19; --muted: #6f6c66; --line: #e6e3dc; --wash: #efede7; --accent: #1c1b19; --accent-fg: #faf9f6;
+    --danger: #b3261e; --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --fg: #ecebe7; --muted: #9a978f; --line: #2e2d2a; --wash: #232220; --accent: #ecebe7; --accent-fg: #151514; --danger: #f2867e; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--sans); -webkit-text-size-adjust: 100%; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: env(safe-area-inset-top) 20px calc(96px + env(safe-area-inset-bottom)); }
+
+  .top { display: flex; align-items: center; gap: 8px; padding: 18px 0 12px; position: sticky; top: 0; background: var(--bg); z-index: 2; }
+  .top h1 { font-size: 22px; font-weight: 600; margin: 0; flex: 1; }
+  .top .count { color: var(--muted); font-size: 14px; }
+  .ghost { background: none; border: 0; padding: 8px; border-radius: 8px; color: var(--fg); display: inline-flex; align-items: center; gap: 4px; }
+  .ghost:hover { background: var(--wash); }
+  .ghost svg { width: 20px; height: 20px; }
+  .btn { border: 0; border-radius: 999px; padding: 8px 16px; background: var(--accent); color: var(--accent-fg); font-weight: 500; }
+  .btn.secondary { background: var(--wash); color: var(--fg); }
+  .btn.danger { background: none; color: var(--danger); padding-left: 0; }
+  :focus-visible { outline: 2px solid #4a7bd0; outline-offset: 2px; }
+
+  .search { display: flex; align-items: center; gap: 8px; background: var(--wash); border-radius: 10px; padding: 0 12px; height: 40px; color: var(--muted); margin-bottom: 8px; }
+  .search input { border: 0; background: none; outline: none; flex: 1; min-width: 0; color: var(--fg); }
+  .group { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; padding: 20px 0 4px; }
+  .book { display: flex; gap: 14px; align-items: center; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; }
+  .book:hover .title { text-decoration: underline; text-underline-offset: 3px; }
+  .spine { width: 34px; height: 50px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); }
+  .grow { flex: 1; min-width: 0; }
+  .title { font-size: 16px; }
+  .author { color: var(--muted); font-size: 14px; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; gap: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 48px 0; text-align: center; }
+  .fab { position: fixed; right: max(20px, calc(50vw - 320px)); bottom: calc(20px + env(safe-area-inset-bottom)); width: 56px; height: 56px; border-radius: 50%;
+    border: 0; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; box-shadow: 0 6px 20px -6px rgb(0 0 0 / .35); }
+  .fab svg { width: 24px; height: 24px; }
+
+  .head { padding: 4px 0 16px; border-bottom: 1px solid var(--line); }
+  .head h2 { font-family: var(--serif); font-size: 28px; line-height: 1.2; font-weight: 500; margin: 0 0 4px; text-wrap: balance; }
+  .head .author { font-size: 16px; }
+  .head .meta { font-size: 13px; margin-top: 8px; }
+
+  #page { min-height: 55vh; outline: none; padding: 20px 0 40px; font-size: 17px; line-height: 1.65; overflow-wrap: anywhere; }
+  #page p, #page div { margin: 0 0 14px; }
+  #page blockquote { margin: 22px 0; padding: 2px 0 2px 18px; border-left: 2px solid var(--fg); font-family: var(--serif); font-size: 19px; line-height: 1.55; font-style: italic; }
+  #page.is-empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; position: absolute; white-space: pre-line; }
+
+  .tools { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); z-index: 3; }
+  .tools .in { max-width: 680px; margin: 0 auto; display: flex; align-items: center; gap: 8px; }
+  .seg { display: inline-flex; background: var(--wash); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: none; border-radius: 8px; padding: 6px 14px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+  .seg button.q { font-family: var(--serif); font-style: italic; }
+  .saved { color: var(--muted); font-size: 13px; flex: 1; text-align: right; }
+
+  form.edit { display: grid; gap: 16px; padding-top: 8px; }
+  label.f { display: grid; gap: 6px; font-size: 14px; color: var(--muted); min-width: 0; }
+  label.f input { width: 100%; min-width: 0; -webkit-appearance: none; appearance: none; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 16px; color: var(--fg); outline: none; min-height: 44px; }
+  label.f input:focus { border-color: var(--fg); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: -8px; }
+  .err { color: var(--danger); font-size: 14px; min-height: 20px; }
+
+  dialog { border: 0; border-radius: 14px; padding: 8px; background: var(--bg); color: var(--fg); box-shadow: 0 0 0 1px var(--line), 0 16px 40px -12px rgb(0 0 0 / .4); min-width: 240px; }
+  dialog::backdrop { background: rgb(0 0 0 / .3); }
+  dialog button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 10px 12px; border-radius: 8px; }
+  dialog button:hover { background: var(--wash); }
+  dialog p { margin: 8px 12px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="tools"></div>
+<dialog id="menu">
+  <button data-menu="export">Export backup</button>
+  <button data-menu="import">Import backup</button>
+  <p>Books are saved on this device. Export a backup to move them to another device.</p>
+  <button data-menu="close">Close</button>
+</dialog>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script>
+{
+  const KEY = 'reading-log:v1';
+  const icon = {
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    search: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+    more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+  };
+
+  // ---------- storage ----------
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { books: [] }; } catch { return { books: [] }; } };
+  let db = load();
+  const persist = () => localStorage.setItem(KEY, JSON.stringify(db));
+  const byId = (id) => db.books.find((b) => b.id === id);
+  if (navigator.storage?.persist) navigator.storage.persist();
+
+  // ---------- helpers ----------
+  const app = document.getElementById('app');
+  const tools = document.getElementById('tools');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const fmt = (d, year = true) => d ? new Date(d + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(year ? { year: 'numeric' } : {}) }) : '';
+  const range = (b) => {
+    if (!b.end) return b.start ? `Started ${fmt(b.start)}` : '';
+    if (!b.start) return `Finished ${fmt(b.end)}`;
+    return `${fmt(b.start, b.start.slice(0, 4) !== b.end.slice(0, 4))} – ${fmt(b.end)}`;
+  };
+  const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+  const spine = (b) => `<span class="spine" style="background: hsl(${hue(b.title + b.author)} 32% 72%)"></span>`;
+  const quoteCount = (html) => (html.match(/<blockquote>(?!(<br>)*<\/blockquote>)/g) || []).length;
+
+  // Keep only paragraphs, quotes and line breaks from the page.
+  const sanitize = (html) => {
+    const src = document.createElement('template'); src.innerHTML = html;
+    const out = document.createElement('div');
+    const walk = (from, to) => {
+      for (const n of from.childNodes) {
+        if (n.nodeType === 3) { to.append(n.textContent); continue; }
+        if (n.nodeType !== 1) continue;
+        const tag = n.tagName;
+        if (tag === 'BR') { to.append(document.createElement('br')); continue; }
+        if (tag === 'BLOCKQUOTE' || tag === 'P' || tag === 'DIV') { const el = document.createElement(tag === 'BLOCKQUOTE' ? 'blockquote' : 'p'); walk(n, el); to.append(el); continue; }
+        if (tag === 'SCRIPT' || tag === 'STYLE') continue;
+        walk(n, to);
+      }
+    };
+    walk(src.content, out);
+    return out.innerHTML;
+  };
+
+  // ---------- views ----------
+  const listView = () => {
+    const q = (state.q || '').toLowerCase();
+    const books = db.books.filter((b) => (b.title + ' ' + b.author).toLowerCase().includes(q));
+    const reading = books.filter((b) => !b.end).sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+    const done = books.filter((b) => b.end).sort((a, b) => b.end.localeCompare(a.end));
+    const groups = [];
+    if (reading.length) groups.push(['Reading now', reading]);
+    for (const b of done) { const y = b.end.slice(0, 4); const g = groups.find((x) => x[0] === y); g ? g[1].push(b) : groups.push([y, [b]]); }
+    const row = (b) => {
+      const n = quoteCount(b.page || '');
+      return `<button class="book" data-go="#/book/${b.id}">${spine(b)}<span class="grow"><div class="title">${esc(b.title)}</div><div class="author">${esc(b.author)}</div>
+        <div class="meta"><span>${esc(range(b))}</span>${n ? `<span>${n} ${n === 1 ? 'quote' : 'quotes'}</span>` : ''}</div></span></button>`;
+    };
+    const finished = db.books.filter((b) => b.end).length;
+    app.innerHTML = `
+      <div class="top"><h1>My books</h1><span class="count">${finished} read</span><button class="ghost" id="more" aria-label="Menu">${icon.more}</button></div>
+      ${db.books.length ? `<label class="search">${icon.search}<input id="q" type="search" placeholder="Search title or author" value="${esc(state.q || '')}"></label>` : ''}
+      ${groups.map(([name, bs]) => `<div class="group"><span>${esc(name)}</span><span>${bs.length} ${bs.length === 1 ? 'book' : 'books'}</span></div>${bs.map(row).join('')}`).join('')
+        || `<div class="empty">${db.books.length ? 'No books match.' : 'No books yet.<br>Tap + to add the first one.'}</div>`}
+      <button class="fab" data-go="#/new" aria-label="Add book">${icon.plus}</button>`;
+    tools.innerHTML = '';
+    const qi = document.getElementById('q');
+    qi?.addEventListener('input', () => { state.q = qi.value; const p = qi.selectionStart; listView(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(p, p); });
+    document.getElementById('more').onclick = () => document.getElementById('menu').showModal();
+  };
+
+  const formView = (b) => {
+    const isNew = !b;
+    b ||= { title: '', author: '', start: today(), end: '' };
+    app.innerHTML = `
+      <div class="top"><button class="ghost" data-go="${isNew ? '#/' : '#/book/' + b.id}" aria-label="Back">${icon.back}</button><h1>${isNew ? 'New book' : 'Edit book'}</h1></div>
+      <form class="edit" id="f" autocomplete="off">
+        <label class="f">Title<input name="title" value="${esc(b.title)}" ${isNew ? 'autofocus' : ''}></label>
+        <label class="f">Author<input name="author" value="${esc(b.author)}"></label>
+        <div class="two"><label class="f">Started<input type="date" name="start" value="${esc(b.start)}"></label>
+          <label class="f">Finished<input type="date" name="end" value="${esc(b.end)}"></label></div>
+        <div class="hint">Leave Finished blank while you're still reading.</div>
+        <div class="err" id="err"></div>
+        <div style="display:flex; gap:8px; align-items:center">
+          ${isNew ? '' : '<button type="button" class="btn danger" id="del">Delete book</button>'}
+          <span class="grow"></span><button type="submit" class="btn">${isNew ? 'Add book' : 'Save'}</button></div>
+      </form>`;
+    tools.innerHTML = '';
+    document.getElementById('f').onsubmit = (e) => {
+      e.preventDefault();
+      const d = Object.fromEntries(new FormData(e.target)); for (const k in d) d[k] = d[k].trim();
+      if (!d.title || !d.author) return (document.getElementById('err').textContent = 'Add a title and an author.');
+      if (d.start && d.end && d.end < d.start) return (document.getElementById('err').textContent = 'Finished date is before the start date.');
+      if (isNew) { const id = crypto.randomUUID?.() || String(Date.now()); db.books.push({ id, ...d, page: '', updated: Date.now() }); persist(); location.replace('#/book/' + id); }
+      else { Object.assign(b, d, { updated: Date.now() }); persist(); location.replace('#/book/' + b.id); }
+    };
+    document.getElementById('del')?.addEventListener('click', () => {
+      if (!confirm(`Delete "${b.title}" and everything written on its page?`)) return;
+      db.books = db.books.filter((x) => x.id !== b.id); persist(); location.replace('#/');
+    });
+  };
+
+  const bookView = (b) => {
+    app.innerHTML = `
+      <div class="top"><button class="ghost" data-go="#/" aria-label="All books">${icon.back}</button><span class="grow"></span><button class="ghost" data-go="#/book/${b.id}/edit">Edit</button></div>
+      <div class="head"><h2>${esc(b.title)}</h2><div class="author">${esc(b.author)}</div><div class="meta">${esc(range(b) || 'No dates yet')}</div></div>
+      <div id="page" contenteditable="true" spellcheck="true" data-placeholder="Write anything about this book here.\nTo save a passage, write or paste it, then tap Quote."></div>`;
+    tools.innerHTML = `<div class="tools"><div class="in"><div class="seg"><button id="tNote" aria-pressed="true">Note</button><button id="tQuote" class="q" aria-pressed="false">Quote</button></div><span class="saved" id="saved"></span></div></div>`;
+    const page = document.getElementById('page');
+    page.innerHTML = sanitize(b.page || '') || '<p><br></p>';
+    document.execCommand('defaultParagraphSeparator', false, 'p');
+    const isEmpty = () => !page.textContent.trim() && !page.querySelector('blockquote');
+    const placeholder = () => page.classList.toggle('is-empty', isEmpty());
+    placeholder();
+
+    let timer;
+    const saved = document.getElementById('saved');
+    const save = () => { b.page = isEmpty() ? '' : sanitize(page.innerHTML); b.updated = Date.now(); persist(); saved.textContent = 'Saved'; };
+    page.addEventListener('input', () => { placeholder(); saved.textContent = ''; clearTimeout(timer); timer = setTimeout(save, 400); });
+    page.addEventListener('blur', () => { clearTimeout(timer); save(); });
+    page.addEventListener('paste', (e) => { e.preventDefault(); document.execCommand('insertText', false, e.clipboardData.getData('text/plain')); });
+
+    const currentBlock = () => {
+      const sel = getSelection(); if (!sel.rangeCount) return null;
+      let n = sel.anchorNode; if (!page.contains(n)) return null;
+      while (n && n !== page) { if (n.nodeName === 'BLOCKQUOTE') return 'quote'; n = n.parentNode; }
+      return 'note';
+    };
+    const sync = () => { const k = currentBlock(); if (!k) return; tNote.setAttribute('aria-pressed', k === 'note'); tQuote.setAttribute('aria-pressed', k === 'quote'); };
+    const tNote = document.getElementById('tNote'), tQuote = document.getElementById('tQuote');
+    const setBlock = (tag) => {
+      if (!currentBlock()) { page.focus(); const r = document.createRange(); r.selectNodeContents(page); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+      document.execCommand('formatBlock', false, tag);
+      placeholder(); sync(); clearTimeout(timer); timer = setTimeout(save, 400);
+    };
+    for (const [btn, tag] of [[tNote, 'p'], [tQuote, 'blockquote']]) {
+      btn.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the cursor in the page
+      btn.addEventListener('click', () => setBlock(tag));
+    }
+    document.onselectionchange = sync;
+    // Enter ends a quote and starts a note paragraph below it. Shift+Enter adds a line inside the quote.
+    page.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing || currentBlock() !== 'quote') return;
+      e.preventDefault();
+      let bq = getSelection().anchorNode;
+      while (bq.nodeName !== 'BLOCKQUOTE') bq = bq.parentNode;
+      const p = document.createElement('p'); p.append(document.createElement('br'));
+      bq.after(p);
+      const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      sync(); clearTimeout(timer); timer = setTimeout(save, 400);
+    });
+  };
+
+  // ---------- router ----------
+  const state = { q: '' };
+  const route = () => {
+    document.onselectionchange = null;
+    const [, kind, id, sub] = location.hash.split('/');
+    if (kind === 'new') return formView();
+    const b = kind === 'book' && byId(id);
+    if (b && sub === 'edit') return formView(b);
+    if (b) return bookView(b);
+    listView();
+    window.scrollTo(0, 0);
+  };
+  addEventListener('hashchange', route);
+  addEventListener('click', (e) => {
+    const t = e.target.closest('[data-go]'); if (!t) return;
+    e.preventDefault(); location.hash = t.dataset.go;
+  });
+  addEventListener('storage', (e) => { if (e.key === KEY) { db = load(); route(); } });
+
+  // Keep the Note/Quote bar above the on-screen keyboard.
+  visualViewport?.addEventListener('resize', () => { const bar = document.querySelector('.tools'); if (bar) bar.style.bottom = Math.max(0, innerHeight - visualViewport.height - visualViewport.offsetTop) + 'px'; });
+
+  // ---------- backup ----------
+  const menu = document.getElementById('menu');
+  menu.addEventListener('click', (e) => {
+    const k = e.target.closest('[data-menu]')?.dataset.menu; if (!k) return;
+    menu.close();
+    if (k === 'export') {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }));
+      a.download = `reading-log-${today()}.json`; a.click(); URL.revokeObjectURL(a.href);
+    }
+    if (k === 'import') document.getElementById('importFile').click();
+  });
+  document.getElementById('importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data.books)) throw new Error();
+      const known = new Set(db.books.map((b) => b.id));
+      const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), page: sanitize(String(b.page || '')), updated: b.updated || Date.now() }));
+      for (const b of incoming) { if (known.has(b.id)) Object.assign(byId(b.id), b); else db.books.push(b); }
+      persist(); route(); alert(`Imported ${incoming.length} ${incoming.length === 1 ? 'book' : 'books'}.`);
+    } catch { alert('That file is not a reading log backup.'); }
+    e.target.value = '';
+  });
+
+  route();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
