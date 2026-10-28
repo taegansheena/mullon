@@ -1,0 +1,6 @@
+services:
+  app:
+    command: python3 -m http.server "$PORT"
+    portal:
+      title: Reading log
+      description: Preview of this thread's changes. Books saved here are separate from the live app.
