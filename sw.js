@@ -1,6 +1,8 @@
 // Network first so updates show up, with a cached copy for offline use.
-const CACHE = 'reading-log-v1';
-const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+// Only the app's own files and the Supabase library are cached; sync requests always go to the network.
+const CACHE = 'reading-log-v2';
+const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js';
+const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', SUPABASE_JS];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
@@ -8,7 +10,8 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  const url = e.request.url;
+  if (e.request.method !== 'GET' || !(url.startsWith(self.location.origin) || url === SUPABASE_JS)) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); return res; })

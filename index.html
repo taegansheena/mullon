@@ -84,18 +84,26 @@
   dialog button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 10px 12px; border-radius: 8px; }
   dialog button:hover { background: var(--wash); }
   dialog p { margin: 8px 12px; color: var(--muted); font-size: 13px; }
+  .lead { margin: 8px 0 20px; text-wrap: pretty; }
+  .lead strong { font-weight: 500; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .btn { white-space: nowrap; }
+  .btn.link { background: none; color: var(--muted); padding-left: 0; }
+  .preview-note { margin-top: 32px; font-size: 13px; color: var(--muted); }
+  .btn:disabled { opacity: .6; }
 </style>
 </head>
 <body>
 <div class="wrap" id="app"></div>
 <div id="tools"></div>
 <dialog id="menu">
+  <button data-menu="account">Sync</button>
   <button data-menu="export">Export backup</button>
   <button data-menu="import">Import backup</button>
-  <p>Books are saved on this device. Export a backup to move them to another device.</p>
   <button data-menu="close">Close</button>
 </dialog>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 
 <script>
 {
@@ -111,7 +119,10 @@
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || { books: [] }; } catch { return { books: [] }; } };
   let db = load();
   const persist = () => localStorage.setItem(KEY, JSON.stringify(db));
-  const byId = (id) => db.books.find((b) => b.id === id);
+  const live = () => db.books.filter((b) => !b.deleted);
+  const byId = (id) => live().find((b) => b.id === id);
+  // Record a local change to a book and queue it for syncing.
+  const changed = (b) => { b.updated = Date.now(); b.dirty = true; persist(); syncSoon(); };
   if (navigator.storage?.persist) navigator.storage.persist();
 
   // ---------- helpers ----------
@@ -151,7 +162,7 @@
   // ---------- views ----------
   const listView = () => {
     const q = (state.q || '').toLowerCase();
-    const books = db.books.filter((b) => (b.title + ' ' + b.author).toLowerCase().includes(q));
+    const books = live().filter((b) => (b.title + ' ' + b.author).toLowerCase().includes(q));
     const reading = books.filter((b) => !b.end).sort((a, b) => (b.start || '').localeCompare(a.start || ''));
     const done = books.filter((b) => b.end).sort((a, b) => b.end.localeCompare(a.end));
     const groups = [];
@@ -162,12 +173,12 @@
       return `<button class="book" data-go="#/book/${b.id}">${spine(b)}<span class="grow"><div class="title">${esc(b.title)}</div><div class="author">${esc(b.author)}</div>
         <div class="meta"><span>${esc(range(b))}</span>${n ? `<span>${n} ${n === 1 ? 'quote' : 'quotes'}</span>` : ''}</div></span></button>`;
     };
-    const finished = db.books.filter((b) => b.end).length;
+    const finished = live().filter((b) => b.end).length;
     app.innerHTML = `
       <div class="top"><h1>My books</h1><span class="count">${finished} read</span><button class="ghost" id="more" aria-label="Menu">${icon.more}</button></div>
-      ${db.books.length ? `<label class="search">${icon.search}<input id="q" type="search" placeholder="Search title or author" value="${esc(state.q || '')}"></label>` : ''}
+      ${live().length ? `<label class="search">${icon.search}<input id="q" type="search" placeholder="Search title or author" value="${esc(state.q || '')}"></label>` : ''}
       ${groups.map(([name, bs]) => `<div class="group"><span>${esc(name)}</span><span>${bs.length} ${bs.length === 1 ? 'book' : 'books'}</span></div>${bs.map(row).join('')}`).join('')
-        || `<div class="empty">${db.books.length ? 'No books match.' : 'No books yet.<br>Tap + to add the first one.'}</div>`}
+        || `<div class="empty">${live().length ? 'No books match.' : 'No books yet.<br>Tap + to add the first one.'}</div>`}
       <button class="fab" data-go="#/new" aria-label="Add book">${icon.plus}</button>`;
     tools.innerHTML = '';
     const qi = document.getElementById('q');
@@ -197,12 +208,12 @@
       const d = Object.fromEntries(new FormData(e.target)); for (const k in d) d[k] = d[k].trim();
       if (!d.title || !d.author) return (document.getElementById('err').textContent = 'Add a title and an author.');
       if (d.start && d.end && d.end < d.start) return (document.getElementById('err').textContent = 'Finished date is before the start date.');
-      if (isNew) { const id = crypto.randomUUID?.() || String(Date.now()); db.books.push({ id, ...d, page: '', updated: Date.now() }); persist(); location.replace('#/book/' + id); }
-      else { Object.assign(b, d, { updated: Date.now() }); persist(); location.replace('#/book/' + b.id); }
+      if (isNew) { const id = crypto.randomUUID?.() || String(Date.now()); const nb = { id, ...d, page: '' }; db.books.push(nb); changed(nb); location.replace('#/book/' + id); }
+      else { Object.assign(b, d); changed(b); location.replace('#/book/' + b.id); }
     };
     document.getElementById('del')?.addEventListener('click', () => {
       if (!confirm(`Delete "${b.title}" and everything written on its page?`)) return;
-      db.books = db.books.filter((x) => x.id !== b.id); persist(); location.replace('#/');
+      b.deleted = true; b.page = ''; changed(b); location.replace('#/');
     });
   };
 
@@ -221,7 +232,7 @@
 
     let timer;
     const saved = document.getElementById('saved');
-    const save = () => { b.page = isEmpty() ? '' : sanitize(page.innerHTML); b.updated = Date.now(); persist(); saved.textContent = 'Saved'; };
+    const save = () => { const html = isEmpty() ? '' : sanitize(page.innerHTML); if (html !== (b.page || '')) { b.page = html; changed(b); } saved.textContent = 'Saved'; };
     page.addEventListener('input', () => { placeholder(); saved.textContent = ''; clearTimeout(timer); timer = setTimeout(save, 400); });
     page.addEventListener('blur', () => { clearTimeout(timer); save(); });
     page.addEventListener('paste', (e) => { e.preventDefault(); document.execCommand('insertText', false, e.clipboardData.getData('text/plain')); });
@@ -258,12 +269,154 @@
     });
   };
 
+  // ---------- sync ----------
+  // Books always save on this device first. When signed in, changed books are pushed to
+  // Supabase and newer copies are pulled back; for each book the most recent edit wins.
+  // Preview links use a separate table so trying out a change never touches the real books.
+  const TABLE = location.hostname === 'taegansheena.github.io' ? 'books' : 'preview_books';
+  const sb = window.supabase?.createClient('https://gjknwzwryoahvlcbjrqi.supabase.co', 'sb_publishable_5gJ0riYHCCPffhahB0lQ7A_ZThO-FXG');
+  const auth = { session: null, mode: db.sync ? 'signin' : 'signup', email: '', msg: '', info: '', busy: false };
+  const syncState = { status: '', last: 0 };
+  const toRow = (b, uid) => ({ user_id: uid, id: b.id, title: b.title, author: b.author, start_date: b.start || '', end_date: b.end || '', page: b.page || '', deleted: !!b.deleted, updated: b.updated || 0 });
+  const fromRow = (r) => ({ id: r.id, title: r.title, author: r.author, start: r.start_date, end: r.end_date, page: sanitize(r.page), deleted: r.deleted, updated: Number(r.updated) });
+  const setSync = (status) => { syncState.status = status; if (status === 'synced') syncState.last = Date.now(); if (location.hash === '#/account') accountView(); };
+
+  let running = null, rerun = false, soon;
+  const syncSoon = () => { clearTimeout(soon); soon = setTimeout(sync, 1500); };
+  const sync = async () => {
+    if (!sb || !auth.session) return;
+    if (running) { rerun = true; return running; }
+    running = (async () => {
+      setSync('syncing');
+      try {
+        const uid = auth.session.user.id;
+        if (db.sync?.user !== uid) { db.books.forEach((b) => { b.dirty = true; }); db.sync = { user: uid, cursor: '1970-01-01T00:00:00Z' }; persist(); }
+        const dirty = db.books.filter((b) => b.dirty);
+        if (dirty.length) {
+          const sent = new Map(dirty.map((b) => [b.id, b.updated]));
+          const { error } = await sb.from(TABLE).upsert(dirty.map((b) => toRow(b, uid)), { onConflict: 'user_id,id' });
+          if (error) throw error;
+          for (const b of db.books) if (b.dirty && sent.get(b.id) === b.updated) delete b.dirty;
+          persist();
+        }
+        // Re-read the last minute too, in case a slower write landed just before the cursor.
+        const since = new Date(Date.parse(db.sync.cursor) - 60000).toISOString();
+        const touched = new Set();
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await sb.from(TABLE).select('*').gt('synced_at', since).order('synced_at').range(from, from + 999);
+          if (error) throw error;
+          for (const r of data) {
+            if (Date.parse(r.synced_at) > Date.parse(db.sync.cursor)) db.sync.cursor = r.synced_at;
+            const local = db.books.find((b) => b.id === r.id);
+            if (local && (local.updated || 0) >= Number(r.updated)) continue;
+            if (local) { Object.assign(local, fromRow(r)); delete local.dirty; } else db.books.push(fromRow(r));
+            touched.add(r.id);
+          }
+          if (data.length < 1000) break;
+        }
+        persist();
+        setSync('synced');
+        if (touched.size) refreshAfterSync(touched);
+      } catch (e) {
+        console.warn('Sync failed', e);
+        setSync(navigator.onLine ? 'error' : 'offline');
+      } finally {
+        running = null;
+        if (rerun) { rerun = false; sync(); }
+      }
+    })();
+    return running;
+  };
+
+  // Redraw with synced changes, but never under the cursor of a page being written on.
+  const refreshAfterSync = (ids) => {
+    const [, kind, id, sub] = location.hash.split('/');
+    if (kind === 'new' || sub === 'edit' || kind === 'account') return;
+    if (kind === 'book') {
+      if (!ids.has(id) || document.activeElement?.id === 'page') return;
+      if (!byId(id)) return location.replace('#/');
+    }
+    const y = scrollY; route(); scrollTo(0, y);
+  };
+
+  if (sb) {
+    sb.auth.onAuthStateChange((event, session) => {
+      auth.session = session;
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') setTimeout(sync);
+      if (location.hash === '#/account') accountView();
+    });
+    addEventListener('online', sync);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+    setInterval(() => { if (document.visibilityState === 'visible') sync(); }, 30000);
+  }
+
+  const ago = (t) => {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    return new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  };
+
+  const accountView = () => {
+    const s = auth.session;
+    const status = { syncing: 'Syncing…', error: 'Couldn’t sync. It will try again shortly.', offline: 'Offline. Changes will sync when you’re back online.' }[syncState.status]
+      || (syncState.last ? `Last synced ${ago(syncState.last)}` : '');
+    let body;
+    if (!sb) body = `<p class="lead">Sync isn’t available right now. Check your connection and reload the app. Your books are still saved on this device.</p>`;
+    else if (s) body = `
+      <p class="lead">Signed in as <strong>${esc(s.user.email)}</strong>. Books you add or change here show up on your other devices.</p>
+      <p class="hint" id="syncStatus">${esc(status)}</p>
+      <div class="row"><button class="btn secondary" id="syncNow">Sync now</button><span class="grow"></span><button class="btn danger" id="signOut">Sign out</button></div>`;
+    else {
+      const signup = auth.mode === 'signup';
+      body = `
+      <p class="lead">${signup ? 'Create an account to keep your books the same on your phone and computer.' : 'Sign in to keep your books the same on your phone and computer.'}</p>
+      <form class="edit" id="authForm">
+        <label class="f">Email<input name="email" type="email" autocomplete="username" required value="${esc(auth.email)}"></label>
+        <label class="f">Password<input name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" minlength="6" required></label>
+        ${auth.info ? `<p class="hint" style="margin:0">${esc(auth.info)}</p>` : ''}
+        <div class="err">${esc(auth.msg)}</div>
+        <div class="row"><button type="button" class="btn link" id="switchMode">${signup ? 'Sign in instead' : 'Create an account'}</button><span class="grow"></span>
+          <button class="btn" ${auth.busy ? 'disabled' : ''}>${auth.busy ? 'One moment…' : signup ? 'Create account' : 'Sign in'}</button></div>
+      </form>`;
+    }
+    app.innerHTML = `
+      <div class="top"><button class="ghost" data-go="#/" aria-label="All books">${icon.back}</button><h1>Sync</h1></div>
+      ${body}
+      ${TABLE === 'books' ? '' : '<p class="preview-note">This is a preview. Books here sync separately from your real books.</p>'}`;
+    tools.innerHTML = '';
+    document.getElementById('syncNow')?.addEventListener('click', sync);
+    document.getElementById('signOut')?.addEventListener('click', async () => { await sb.auth.signOut({ scope: 'local' }); syncState.last = 0; accountView(); });
+    document.getElementById('switchMode')?.addEventListener('click', () => { Object.assign(auth, { mode: auth.mode === 'signup' ? 'signin' : 'signup', msg: '', info: '' }); accountView(); });
+    const form = document.getElementById('authForm');
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const d = Object.fromEntries(new FormData(form));
+      Object.assign(auth, { busy: true, msg: '' }); accountView();
+      auth.email = d.email.trim();
+      auth.info = '';
+      let error;
+      if (auth.mode === 'signup') {
+        let data;
+        ({ data, error } = await sb.auth.signUp({ email: auth.email, password: d.password }));
+        // With email confirmation on, there is no session until the link in the email is tapped.
+        if (!error && !data.session) Object.assign(auth, { mode: 'signin', info: `We’ve emailed a confirmation link to ${auth.email}. Tap it, then come back here and sign in.` });
+      } else {
+        ({ error } = await sb.auth.signInWithPassword({ email: auth.email, password: d.password }));
+      }
+      const friendly = { 'Invalid login credentials': 'That email and password don’t match. New here? Tap Create an account below.', 'Email not confirmed': 'Confirm your email first: tap the link in the email we sent, then sign in.', 'User already registered': 'There’s already an account for this email. Sign in instead.', 'Signups not allowed for this instance': 'New accounts aren’t open yet. If you already have an account, sign in instead.' };
+      Object.assign(auth, { busy: false, msg: error ? friendly[error.message] || error.message : '' });
+      accountView();
+    });
+  };
+
   // ---------- router ----------
   const state = { q: '' };
   const route = () => {
     document.onselectionchange = null;
     const [, kind, id, sub] = location.hash.split('/');
     if (kind === 'new') return formView();
+    if (kind === 'account') return accountView();
     const b = kind === 'book' && byId(id);
     if (b && sub === 'edit') return formView(b);
     if (b) return bookView(b);
@@ -287,19 +440,19 @@
     menu.close();
     if (k === 'export') {
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }));
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ books: live().map(({ dirty, deleted, ...b }) => b) }, null, 2)], { type: 'application/json' }));
       a.download = `reading-log-${today()}.json`; a.click(); URL.revokeObjectURL(a.href);
     }
     if (k === 'import') document.getElementById('importFile').click();
+    if (k === 'account') location.hash = '#/account';
   });
   document.getElementById('importFile').addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file) return;
     try {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.books)) throw new Error();
-      const known = new Set(db.books.map((b) => b.id));
-      const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), page: sanitize(String(b.page || '')), updated: b.updated || Date.now() }));
-      for (const b of incoming) { if (known.has(b.id)) Object.assign(byId(b.id), b); else db.books.push(b); }
+            const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), page: sanitize(String(b.page || '')) }));
+      for (const b of incoming) { const cur = db.books.find((x) => x.id === b.id); if (cur) Object.assign(cur, b, { deleted: false }); else db.books.push(b); changed(cur || b); }
       persist(); route(); alert(`Imported ${incoming.length} ${incoming.length === 1 ? 'book' : 'books'}.`);
     } catch { alert('That file is not a reading log backup.'); }
     e.target.value = '';
