@@ -22,6 +22,7 @@
     :root { --bg: #151514; --fg: #ecebe7; --muted: #9a978f; --line: #2e2d2a; --wash: #232220; --accent: #ecebe7; --accent-fg: #151514; --danger: #f2867e; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--sans); -webkit-text-size-adjust: 100%; }
   button, input { font: inherit; color: inherit; }
   button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -75,6 +76,7 @@
   label.f { display: grid; gap: 6px; font-size: 14px; color: var(--muted); min-width: 0; }
   label.f input { width: 100%; min-width: 0; -webkit-appearance: none; appearance: none; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 16px; color: var(--fg); outline: none; min-height: 44px; }
   label.f input:focus { border-color: var(--fg); }
+  form.edit .seg { justify-self: start; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .hint { font-size: 13px; color: var(--muted); margin-top: -8px; }
   .err { color: var(--danger); font-size: 14px; min-height: 20px; }
@@ -136,6 +138,8 @@
     if (!b.start) return `Finished ${fmt(b.end)}`;
     return `${fmt(b.start, b.start.slice(0, 4) !== b.end.slice(0, 4))} – ${fmt(b.end)}`;
   };
+  // A book's list comes from its dates: no dates is to be read, a start only is reading, a finish is read.
+  const status = (b) => b.end ? 'read' : b.start ? 'reading' : 'tbr';
   const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
   const spine = (b) => `<span class="spine" style="background: hsl(${hue(b.title + b.author)} 32% 72%)"></span>`;
   const quoteCount = (html) => (html.match(/<blockquote>(?!(<br>)*<\/blockquote>)/g) || []).length;
@@ -163,10 +167,12 @@
   const listView = () => {
     const q = (state.q || '').toLowerCase();
     const books = live().filter((b) => (b.title + ' ' + b.author).toLowerCase().includes(q));
-    const reading = books.filter((b) => !b.end).sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+    const reading = books.filter((b) => status(b) === 'reading').sort((a, b) => b.start.localeCompare(a.start));
+    const tbr = books.filter((b) => status(b) === 'tbr');
     const done = books.filter((b) => b.end).sort((a, b) => b.end.localeCompare(a.end));
     const groups = [];
     if (reading.length) groups.push(['Reading now', reading]);
+    if (tbr.length) groups.push(['To be read', tbr]);
     for (const b of done) { const y = b.end.slice(0, 4); const g = groups.find((x) => x[0] === y); g ? g[1].push(b) : groups.push([y, [b]]); }
     const row = (b) => {
       const n = quoteCount(b.page || '');
@@ -194,19 +200,36 @@
       <form class="edit" id="f" autocomplete="off">
         <label class="f">Title<input name="title" value="${esc(b.title)}" ${isNew ? 'autofocus' : ''}></label>
         <label class="f">Author<input name="author" value="${esc(b.author)}"></label>
+        <div class="seg" id="status">${[['tbr', 'To read'], ['reading', 'Reading'], ['read', 'Read']].map(([k, t]) => `<button type="button" data-status="${k}">${t}</button>`).join('')}</div>
         <div class="two"><label class="f">Started<input type="date" name="start" value="${esc(b.start)}"></label>
           <label class="f">Finished<input type="date" name="end" value="${esc(b.end)}"></label></div>
-        <div class="hint">Leave Finished blank while you're still reading.</div>
         <div class="err" id="err"></div>
         <div style="display:flex; gap:8px; align-items:center">
           ${isNew ? '' : '<button type="button" class="btn danger" id="del">Delete book</button>'}
           <span class="grow"></span><button type="submit" class="btn">${isNew ? 'Add book' : 'Save'}</button></div>
       </form>`;
     tools.innerHTML = '';
-    document.getElementById('f').onsubmit = (e) => {
+    const form = document.getElementById('f');
+    const endF = form.end.closest('label');
+    let st = status(b);
+    const setStatus = (s) => {
+      st = s;
+      for (const btn of form.querySelectorAll('[data-status]')) btn.setAttribute('aria-pressed', btn.dataset.status === s);
+      if (s !== 'tbr' && !form.start.value) form.start.value = today();
+      if (s === 'read' && !form.end.value) form.end.value = today();
+      form.querySelector('.two').hidden = s === 'tbr';
+      endF.hidden = s !== 'read';
+    };
+    setStatus(st);
+    form.querySelector('#status').onclick = (e) => { const s = e.target.closest('[data-status]')?.dataset.status; if (s) setStatus(s); };
+    form.onsubmit = (e) => {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(e.target)); for (const k in d) d[k] = d[k].trim();
+      if (st === 'tbr') d.start = d.end = '';
+      if (st === 'reading') d.end = '';
       if (!d.title || !d.author) return (document.getElementById('err').textContent = 'Add a title and an author.');
+      if (st === 'reading' && !d.start) return (document.getElementById('err').textContent = 'Add the date you started.');
+      if (st === 'read' && !d.end) return (document.getElementById('err').textContent = 'Add the date you finished.');
       if (d.start && d.end && d.end < d.start) return (document.getElementById('err').textContent = 'Finished date is before the start date.');
       if (isNew) { const id = crypto.randomUUID?.() || String(Date.now()); const nb = { id, ...d, page: '' }; db.books.push(nb); changed(nb); location.replace('#/book/' + id); }
       else { Object.assign(b, d); changed(b); location.replace('#/book/' + b.id); }
@@ -220,9 +243,11 @@
   const bookView = (b) => {
     app.innerHTML = `
       <div class="top"><button class="ghost" data-go="#/" aria-label="All books">${icon.back}</button><span class="grow"></span><button class="ghost" data-go="#/book/${b.id}/edit">Edit</button></div>
-      <div class="head"><h2>${esc(b.title)}</h2><div class="author">${esc(b.author)}</div><div class="meta">${esc(range(b) || 'No dates yet')}</div></div>
+      <div class="head"><h2>${esc(b.title)}</h2><div class="author">${esc(b.author)}</div><div class="meta">${esc(range(b) || 'To be read')}</div>
+        ${status(b) === 'tbr' ? '<button class="btn secondary" id="startReading" style="margin-top:12px">Start reading</button>' : ''}</div>
       <div id="page" contenteditable="true" spellcheck="true" data-placeholder="Write anything about this book here.\nTo save a passage, write or paste it, then tap Quote."></div>`;
     tools.innerHTML = `<div class="tools"><div class="in"><div class="seg"><button id="tNote" aria-pressed="true">Note</button><button id="tQuote" class="q" aria-pressed="false">Quote</button></div><span class="saved" id="saved"></span></div></div>`;
+    document.getElementById('startReading')?.addEventListener('click', () => { b.start = today(); changed(b); bookView(b); });
     const page = document.getElementById('page');
     page.innerHTML = sanitize(b.page || '') || '<p><br></p>';
     document.execCommand('defaultParagraphSeparator', false, 'p');
