@@ -6,11 +6,16 @@ const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== 'covers').map((k) => caches.delete(k)))));
   self.clients.claim();
 });
 self.addEventListener('fetch', (e) => {
   const url = e.request.url;
+  // Book covers never change for a given ID, so serve them from the cache once seen.
+  if (url.startsWith('https://covers.openlibrary.org/')) {
+    e.respondWith(caches.open('covers').then((c) => c.match(e.request).then((hit) => hit || fetch(e.request).then((res) => { c.put(e.request, res.clone()); return res; }))));
+    return;
+  }
   if (e.request.method !== 'GET' || !(url.startsWith(self.location.origin) || url === SUPABASE_JS)) return;
   e.respondWith(
     fetch(e.request)

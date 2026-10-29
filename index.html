@@ -44,7 +44,9 @@
   .group { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; padding: 20px 0 4px; }
   .book { display: flex; gap: 14px; align-items: center; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; }
   .book:hover .title { text-decoration: underline; text-underline-offset: 3px; }
-  .spine { width: 34px; height: 50px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); }
+  .spine { display: block; width: 34px; height: 50px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); object-fit: cover; background: var(--wash); }
+  .sugg { margin-top: -8px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+  .sugg .book:last-child { border-bottom: 0; }
   .grow { flex: 1; min-width: 0; }
   .title { font-size: 16px; }
   .author { color: var(--muted); font-size: 14px; }
@@ -54,7 +56,8 @@
     border: 0; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; box-shadow: 0 6px 20px -6px rgb(0 0 0 / .35); }
   .fab svg { width: 24px; height: 24px; }
 
-  .head { padding: 4px 0 16px; border-bottom: 1px solid var(--line); }
+  .head { padding: 4px 0 16px; border-bottom: 1px solid var(--line); display: flow-root; }
+  .head .cover { float: right; width: 76px; margin: 4px 0 8px 16px; border-radius: 3px; box-shadow: 0 2px 8px -2px rgb(0 0 0 / .3); }
   .head h2 { font-family: var(--serif); font-size: 28px; line-height: 1.2; font-weight: 500; margin: 0 0 4px; text-wrap: balance; }
   .head .author { font-size: 16px; }
   .head .meta { font-size: 13px; margin-top: 8px; }
@@ -141,7 +144,20 @@
   // A book's list comes from its dates: no dates is to be read, a start only is reading, a finish is read.
   const status = (b) => b.end ? 'read' : b.start ? 'reading' : 'tbr';
   const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
-  const spine = (b) => `<span class="spine" style="background: hsl(${hue(b.title + b.author)} 32% 72%)"></span>`;
+  // b.cover is an Open Library cover ID, 'none' when there is no cover, or '' when not looked up yet.
+  const coverUrl = (id, size) => `https://covers.openlibrary.org/b/id/${id}-${size}.jpg`;
+  const hasCover = (b) => /^\d+$/.test(b.cover || '');
+  const spine = (b) => {
+    const style = `background: hsl(${hue(b.title + b.author)} 32% 72%)`;
+    return hasCover(b) ? `<img class="spine" src="${coverUrl(b.cover, 'M')}" alt="" loading="lazy" style="${style}" onerror="this.removeAttribute('src')">` : `<span class="spine" style="${style}"></span>`;
+  };
+  // Search Open Library by title and/or author; keeps the first 5 results that have an author, those with covers first
+  // (results without one are often summaries and study guides).
+  const searchBooks = async (q) => {
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&fields=title,author_name,cover_i,first_publish_year&limit=10`);
+    if (!r.ok) throw new Error(r.status);
+    return (await r.json()).docs.filter((d) => d.author_name?.length).sort((a, b) => !a.cover_i - !b.cover_i).slice(0, 5);
+  };
   const quoteCount = (html) => (html.match(/<blockquote>(?!(<br>)*<\/blockquote>)/g) || []).length;
 
   // Keep only paragraphs, quotes and line breaks from the page.
@@ -199,7 +215,9 @@
       <div class="top"><button class="ghost" data-go="${isNew ? '#/' : '#/book/' + b.id}" aria-label="Back">${icon.back}</button><h1>${isNew ? 'New book' : 'Edit book'}</h1></div>
       <form class="edit" id="f" autocomplete="off">
         <label class="f">Title<input name="title" value="${esc(b.title)}" ${isNew ? 'autofocus' : ''}></label>
+        <div class="sugg" id="sugg" hidden></div>
         <label class="f">Author<input name="author" value="${esc(b.author)}"></label>
+        <div class="row" id="coverRow" hidden><img class="spine" id="coverImg" alt="Cover"><button type="button" class="btn link" id="rmCover">Remove cover</button></div>
         <div class="seg" id="status">${[['tbr', 'To read'], ['reading', 'Reading'], ['read', 'Read']].map(([k, t]) => `<button type="button" data-status="${k}">${t}</button>`).join('')}</div>
         <div class="two"><label class="f">Started<input type="date" name="start" value="${esc(b.start)}"></label>
           <label class="f">Finished<input type="date" name="end" value="${esc(b.end)}"></label></div>
@@ -222,9 +240,39 @@
     };
     setStatus(st);
     form.querySelector('#status').onclick = (e) => { const s = e.target.closest('[data-status]')?.dataset.status; if (s) setStatus(s); };
+
+    // Suggest books from Open Library once typing pauses; picking one fills in the title, author and cover.
+    const titleIn = form.elements.title;
+    let cover = b.cover || '', docs = [], timer;
+    const sugg = document.getElementById('sugg'), coverRow = document.getElementById('coverRow');
+    const showCover = () => { coverRow.hidden = !hasCover({ cover }); if (!coverRow.hidden) document.getElementById('coverImg').src = coverUrl(cover, 'M'); };
+    showCover();
+    document.getElementById('rmCover').onclick = () => { cover = 'none'; showCover(); };
+    titleIn.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = titleIn.value.trim();
+      if (q.length < 3) return (sugg.hidden = true);
+      timer = setTimeout(async () => {
+        const found = await searchBooks(q).catch(() => []);
+        if (titleIn.value.trim() !== q) return; // typing moved on
+        docs = found;
+        sugg.innerHTML = docs.map((d, i) => `<button type="button" class="book" data-i="${i}">${d.cover_i ? `<img class="spine" src="${coverUrl(d.cover_i, 'S')}" alt="">` : '<span class="spine"></span>'}
+          <span class="grow"><div class="title">${esc(d.title)}</div><div class="author">${esc(d.author_name[0])}${d.first_publish_year ? ` · ${d.first_publish_year}` : ''}</div></span></button>`).join('');
+        sugg.hidden = !docs.length;
+      }, 350);
+    });
+    sugg.onclick = (e) => {
+      const d = docs[e.target.closest('[data-i]')?.dataset.i]; if (!d) return;
+      titleIn.value = d.title; form.author.value = d.author_name[0];
+      cover = d.cover_i ? String(d.cover_i) : '';
+      sugg.hidden = true; showCover();
+    };
+    form.addEventListener('focusin', (e) => { if (e.target !== titleIn && !sugg.contains(e.target)) sugg.hidden = true; });
+
     form.onsubmit = (e) => {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(e.target)); for (const k in d) d[k] = d[k].trim();
+      d.cover = cover;
       if (st === 'tbr') d.start = d.end = '';
       if (st === 'reading') d.end = '';
       if (!d.title || !d.author) return (document.getElementById('err').textContent = 'Add a title and an author.');
@@ -243,7 +291,7 @@
   const bookView = (b) => {
     app.innerHTML = `
       <div class="top"><button class="ghost" data-go="#/" aria-label="All books">${icon.back}</button><span class="grow"></span><button class="ghost" data-go="#/book/${b.id}/edit">Edit</button></div>
-      <div class="head"><h2>${esc(b.title)}</h2><div class="author">${esc(b.author)}</div><div class="meta">${esc(range(b) || 'To be read')}</div>
+      <div class="head">${hasCover(b) ? `<img class="cover" src="${coverUrl(b.cover, 'M')}" alt="" onerror="this.remove()">` : ''}<h2>${esc(b.title)}</h2><div class="author">${esc(b.author)}</div><div class="meta">${esc(range(b) || 'To be read')}</div>
         ${status(b) === 'tbr' ? '<button class="btn secondary" id="startReading" style="margin-top:12px">Start reading</button>' : ''}</div>
       <div id="page" contenteditable="true" spellcheck="true" data-placeholder="Write anything about this book here.\nTo save a passage, write or paste it, then tap Quote."></div>`;
     tools.innerHTML = `<div class="tools"><div class="in"><div class="seg"><button id="tNote" aria-pressed="true">Note</button><button id="tQuote" class="q" aria-pressed="false">Quote</button></div><span class="saved" id="saved"></span></div></div>`;
@@ -302,14 +350,14 @@
   const sb = window.supabase?.createClient('https://gjknwzwryoahvlcbjrqi.supabase.co', 'sb_publishable_5gJ0riYHCCPffhahB0lQ7A_ZThO-FXG');
   const auth = { session: null, mode: db.sync ? 'signin' : 'signup', email: '', msg: '', info: '', busy: false };
   const syncState = { status: '', last: 0 };
-  const toRow = (b, uid) => ({ user_id: uid, id: b.id, title: b.title, author: b.author, start_date: b.start || '', end_date: b.end || '', page: b.page || '', deleted: !!b.deleted, updated: b.updated || 0 });
-  const fromRow = (r) => ({ id: r.id, title: r.title, author: r.author, start: r.start_date, end: r.end_date, page: sanitize(r.page), deleted: r.deleted, updated: Number(r.updated) });
+  const toRow = (b, uid) => ({ user_id: uid, id: b.id, title: b.title, author: b.author, start_date: b.start || '', end_date: b.end || '', cover: b.cover || '', page: b.page || '', deleted: !!b.deleted, updated: b.updated || 0 });
+  const fromRow = (r) => ({ id: r.id, title: r.title, author: r.author, start: r.start_date, end: r.end_date, cover: r.cover || '', page: sanitize(r.page), deleted: r.deleted, updated: Number(r.updated) });
   const setSync = (status) => { syncState.status = status; if (status === 'synced') syncState.last = Date.now(); if (location.hash === '#/account') accountView(); };
 
   let running = null, rerun = false, soon;
   const syncSoon = () => { clearTimeout(soon); soon = setTimeout(sync, 1500); };
   const sync = async () => {
-    if (!sb || !auth.session) return;
+    if (!sb || !auth.session) return findCovers();
     if (running) { rerun = true; return running; }
     running = (async () => {
       setSync('syncing');
@@ -342,6 +390,7 @@
         persist();
         setSync('synced');
         if (touched.size) refreshAfterSync(touched);
+        findCovers();
       } catch (e) {
         console.warn('Sync failed', e);
         setSync(navigator.onLine ? 'error' : 'offline');
@@ -351,6 +400,25 @@
       }
     })();
     return running;
+  };
+
+  // Look up covers for books that don't have one yet, one search a second to stay within Open Library's limit.
+  // Runs after a sync so it works on the latest copy of each book. Stops when offline and tries again next time.
+  let finding = false;
+  const findCovers = async () => {
+    if (finding) return;
+    finding = true;
+    try {
+      for (const { id } of live().filter((b) => !b.cover)) {
+        const b = byId(id);
+        if (!b || b.cover) continue;
+        const hit = (await searchBooks(`${b.title} ${b.author}`)).find((d) => d.cover_i);
+        const cur = byId(id);
+        if (cur && !cur.cover) { cur.cover = hit ? String(hit.cover_i) : 'none'; changed(cur); refreshAfterSync(new Set([id])); }
+        await new Promise((r) => setTimeout(r, 1100));
+      }
+    } catch (e) { console.warn('Cover lookup stopped', e); }
+    finally { finding = false; }
   };
 
   // Redraw with synced changes, but never under the cursor of a page being written on.
@@ -476,7 +544,7 @@
     try {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.books)) throw new Error();
-            const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), page: sanitize(String(b.page || '')) }));
+            const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), cover: String(b.cover || ''), page: sanitize(String(b.page || '')) }));
       for (const b of incoming) { const cur = db.books.find((x) => x.id === b.id); if (cur) Object.assign(cur, b, { deleted: false }); else db.books.push(b); changed(cur || b); }
       persist(); route(); alert(`Imported ${incoming.length} ${incoming.length === 1 ? 'book' : 'books'}.`);
     } catch { alert('That file is not a reading log backup.'); }

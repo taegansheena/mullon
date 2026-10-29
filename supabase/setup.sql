@@ -31,6 +31,8 @@ begin
         synced_at timestamptz not null default clock_timestamp(),
         primary key (user_id, id)
       );
+      -- Open Library cover ID, 'none' when there is no cover, or '' when not looked up yet.
+      alter table public.%1$I add column if not exists cover text not null default '';
       create index if not exists %2$I on public.%1$I (user_id, synced_at);
       alter table public.%1$I enable row level security;
       drop policy if exists "Own books only" on public.%1$I;
