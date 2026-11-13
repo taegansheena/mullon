@@ -33,6 +33,8 @@ begin
       );
       -- Open Library cover ID, 'none' when there is no cover, or '' when not looked up yet.
       alter table public.%1$I add column if not exists cover text not null default '';
+      -- Whether the book is on the user's shelf.
+      alter table public.%1$I add column if not exists owned boolean not null default false;
       create index if not exists %2$I on public.%1$I (user_id, synced_at);
       alter table public.%1$I enable row level security;
       drop policy if exists "Own books only" on public.%1$I;

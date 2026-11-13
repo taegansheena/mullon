@@ -188,7 +188,10 @@
     const done = books.filter((b) => b.end).sort((a, b) => b.end.localeCompare(a.end));
     const groups = [];
     if (reading.length) groups.push(['Reading now', reading]);
-    if (tbr.length) groups.push(['To be read', tbr]);
+    for (const [name, owned] of [['To be read · On shelf', true], ['To be read · Not on shelf', false]]) {
+      const bs = tbr.filter((b) => !!b.owned === owned);
+      if (bs.length) groups.push([name, bs]);
+    }
     for (const b of done) { const y = b.end.slice(0, 4); const g = groups.find((x) => x[0] === y); g ? g[1].push(b) : groups.push([y, [b]]); }
     const row = (b) => {
       const n = quoteCount(b.page || '');
@@ -219,6 +222,7 @@
         <label class="f">Author<input name="author" value="${esc(b.author)}"></label>
         <div class="row" id="coverRow" hidden><img class="spine" id="coverImg" alt="Cover"><button type="button" class="btn link" id="rmCover">Remove cover</button></div>
         <div class="seg" id="status">${[['tbr', 'To read'], ['reading', 'Reading'], ['read', 'Read']].map(([k, t]) => `<button type="button" data-status="${k}">${t}</button>`).join('')}</div>
+        <div class="seg" id="shelf">${[['1', 'On shelf'], ['', 'Not on shelf']].map(([k, t]) => `<button type="button" data-owned="${k}">${t}</button>`).join('')}</div>
         <div class="two"><label class="f">Started<input type="date" name="start" value="${esc(b.start)}"></label>
           <label class="f">Finished<input type="date" name="end" value="${esc(b.end)}"></label></div>
         <div class="err" id="err"></div>
@@ -237,9 +241,15 @@
       if (s === 'read' && !form.end.value) form.end.value = today();
       form.querySelector('.two').hidden = s === 'tbr';
       endF.hidden = s !== 'read';
+      form.querySelector('#shelf').hidden = s !== 'tbr';
     };
     setStatus(st);
     form.querySelector('#status').onclick = (e) => { const s = e.target.closest('[data-status]')?.dataset.status; if (s) setStatus(s); };
+    // Whether the book is on the shelf. Kept when it moves on from To read, but only shown while it's to be read.
+    let owned = !!b.owned;
+    const setOwned = (o) => { owned = o; for (const btn of form.querySelectorAll('[data-owned]')) btn.setAttribute('aria-pressed', !!btn.dataset.owned === o); };
+    setOwned(owned);
+    form.querySelector('#shelf').onclick = (e) => { const btn = e.target.closest('[data-owned]'); if (btn) setOwned(!!btn.dataset.owned); };
 
     // Suggest books from Open Library once typing pauses; picking one fills in the title, author and cover.
     const titleIn = form.elements.title;
@@ -272,7 +282,7 @@
     form.onsubmit = (e) => {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(e.target)); for (const k in d) d[k] = d[k].trim();
-      d.cover = cover;
+      d.cover = cover; d.owned = owned;
       if (st === 'tbr') d.start = d.end = '';
       if (st === 'reading') d.end = '';
       if (!d.title || !d.author) return (document.getElementById('err').textContent = 'Add a title and an author.');
@@ -292,10 +302,15 @@
     app.innerHTML = `
       <div class="top"><button class="ghost" data-go="#/" aria-label="All books">${icon.back}</button><span class="grow"></span><button class="ghost" data-go="#/book/${b.id}/edit">Edit</button></div>
       <div class="head">${hasCover(b) ? `<img class="cover" src="${coverUrl(b.cover, 'M')}" alt="" onerror="this.remove()">` : ''}<h2>${esc(b.title)}</h2><div class="author">${esc(b.author)}</div><div class="meta">${esc(range(b) || 'To be read')}</div>
-        ${status(b) === 'tbr' ? '<button class="btn secondary" id="startReading" style="margin-top:12px">Start reading</button>' : ''}</div>
+        ${status(b) === 'tbr' ? `<div class="row" style="margin-top:12px; flex-wrap:wrap"><button class="btn secondary" id="startReading">Start reading</button>
+          <div class="seg" id="shelf"><button data-owned="1" aria-pressed="${!!b.owned}">On shelf</button><button data-owned="" aria-pressed="${!b.owned}">Not on shelf</button></div></div>` : ''}</div>
       <div id="page" contenteditable="true" spellcheck="true" data-placeholder="Write anything about this book here.\nTo save a passage, write or paste it, then tap Quote."></div>`;
     tools.innerHTML = `<div class="tools"><div class="in"><div class="seg"><button id="tNote" aria-pressed="true">Note</button><button id="tQuote" class="q" aria-pressed="false">Quote</button></div><span class="saved" id="saved"></span></div></div>`;
     document.getElementById('startReading')?.addEventListener('click', () => { b.start = today(); changed(b); bookView(b); });
+    document.getElementById('shelf')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-owned]'); if (!btn || !!btn.dataset.owned === !!b.owned) return;
+      b.owned = !!btn.dataset.owned; changed(b); bookView(b);
+    });
     const page = document.getElementById('page');
     page.innerHTML = sanitize(b.page || '') || '<p><br></p>';
     document.execCommand('defaultParagraphSeparator', false, 'p');
@@ -350,8 +365,8 @@
   const sb = window.supabase?.createClient('https://gjknwzwryoahvlcbjrqi.supabase.co', 'sb_publishable_5gJ0riYHCCPffhahB0lQ7A_ZThO-FXG');
   const auth = { session: null, mode: db.sync ? 'signin' : 'signup', email: '', msg: '', info: '', busy: false };
   const syncState = { status: '', last: 0 };
-  const toRow = (b, uid) => ({ user_id: uid, id: b.id, title: b.title, author: b.author, start_date: b.start || '', end_date: b.end || '', cover: b.cover || '', page: b.page || '', deleted: !!b.deleted, updated: b.updated || 0 });
-  const fromRow = (r) => ({ id: r.id, title: r.title, author: r.author, start: r.start_date, end: r.end_date, cover: r.cover || '', page: sanitize(r.page), deleted: r.deleted, updated: Number(r.updated) });
+  const toRow = (b, uid) => ({ user_id: uid, id: b.id, title: b.title, author: b.author, start_date: b.start || '', end_date: b.end || '', cover: b.cover || '', owned: !!b.owned, page: b.page || '', deleted: !!b.deleted, updated: b.updated || 0 });
+  const fromRow = (r) => ({ id: r.id, title: r.title, author: r.author, start: r.start_date, end: r.end_date, cover: r.cover || '', owned: !!r.owned, page: sanitize(r.page), deleted: r.deleted, updated: Number(r.updated) });
   const setSync = (status) => { syncState.status = status; if (status === 'synced') syncState.last = Date.now(); if (location.hash === '#/account') accountView(); };
 
   let running = null, rerun = false, soon;
@@ -544,7 +559,7 @@
     try {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.books)) throw new Error();
-            const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), cover: String(b.cover || ''), page: sanitize(String(b.page || '')) }));
+            const incoming = data.books.filter((b) => b && b.id && b.title).map((b) => ({ id: String(b.id), title: String(b.title), author: String(b.author || ''), start: String(b.start || ''), end: String(b.end || ''), cover: String(b.cover || ''), owned: !!b.owned, page: sanitize(String(b.page || '')) }));
       for (const b of incoming) { const cur = db.books.find((x) => x.id === b.id); if (cur) Object.assign(cur, b, { deleted: false }); else db.books.push(b); changed(cur || b); }
       persist(); route(); alert(`Imported ${incoming.length} ${incoming.length === 1 ? 'book' : 'books'}.`);
     } catch { alert('That file is not a reading log backup.'); }
