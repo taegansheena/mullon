@@ -365,6 +365,8 @@
   const sb = window.supabase?.createClient('https://gjknwzwryoahvlcbjrqi.supabase.co', 'sb_publishable_5gJ0riYHCCPffhahB0lQ7A_ZThO-FXG');
   const auth = { session: null, mode: db.sync ? 'signin' : 'signup', email: '', msg: '', info: '', busy: false };
   const syncState = { status: '', last: 0 };
+  // Bump when toRow/fromRow gain a field, so each device re-reads its books once (see sync).
+  const FIELDS = 2;
   const toRow = (b, uid) => ({ user_id: uid, id: b.id, title: b.title, author: b.author, start_date: b.start || '', end_date: b.end || '', cover: b.cover || '', owned: !!b.owned, page: b.page || '', deleted: !!b.deleted, updated: b.updated || 0 });
   const fromRow = (r) => ({ id: r.id, title: r.title, author: r.author, start: r.start_date, end: r.end_date, cover: r.cover || '', owned: !!r.owned, page: sanitize(r.page), deleted: r.deleted, updated: Number(r.updated) });
   const setSync = (status) => { syncState.status = status; if (status === 'synced') syncState.last = Date.now(); if (location.hash === '#/account') accountView(); };
@@ -379,6 +381,11 @@
       try {
         const uid = auth.session.user.id;
         if (db.sync?.user !== uid) { db.books.forEach((b) => { b.dirty = true; }); db.sync = { user: uid, cursor: '1970-01-01T00:00:00Z' }; persist(); }
+        // An older copy of the app drops fields it doesn't know (such as cover or owned) when it pulls a book, then
+        // treats that book as up to date. So when this copy knows more fields, it re-reads every book once and
+        // takes the stored copy of any book whose last edit it already has.
+        const full = db.sync.fields !== FIELDS;
+        if (full) db.sync.cursor = '1970-01-01T00:00:00Z';
         const dirty = db.books.filter((b) => b.dirty);
         if (dirty.length) {
           const sent = new Map(dirty.map((b) => [b.id, b.updated]));
@@ -396,12 +403,13 @@
           for (const r of data) {
             if (Date.parse(r.synced_at) > Date.parse(db.sync.cursor)) db.sync.cursor = r.synced_at;
             const local = db.books.find((b) => b.id === r.id);
-            if (local && (local.updated || 0) >= Number(r.updated)) continue;
+            if (local && ((local.updated || 0) > Number(r.updated) || (!full && local.updated === Number(r.updated)))) continue;
             if (local) { Object.assign(local, fromRow(r)); delete local.dirty; } else db.books.push(fromRow(r));
             touched.add(r.id);
           }
           if (data.length < 1000) break;
         }
+        db.sync.fields = FIELDS;
         persist();
         setSync('synced');
         if (touched.size) refreshAfterSync(touched);
