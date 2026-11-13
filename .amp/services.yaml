@@ -1,6 +1,6 @@
 services:
   app:
-    command: python3 -m http.server "$PORT"
+    command: pnpm install --frozen-lockfile && pnpm dev --port "$PORT" --strictPort --host 127.0.0.1
     portal:
       title: Reading log
       description: Preview of this thread's changes. Books saved here are separate from the live app.
