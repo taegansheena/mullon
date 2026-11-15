@@ -1,14 +1,18 @@
 import { createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
+import { DepthMark } from '@/components/depth-mark'
+import { Eyebrow } from '@/components/eyebrow'
 import { Segmented } from '@/components/segmented'
 import { Spine } from '@/components/spine'
 import { TopBar } from '@/components/top-bar'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useUser } from '@/lib/auth'
-import { type Book, dateRange, hasCover, sanitize, status, today } from '@/lib/books'
+import { type Book, dateRange, depth, hasCover, sanitize, status, today } from '@/lib/books'
 import { saveBook, useBook } from '@/lib/queries'
 
 export const Route = createFileRoute('/_authed/book/$id')({ component: BookPage })
+
+const plural = (n: number, one: string) => `${n} ${n === 1 ? one : one + 's'}`
 
 function BookPage() {
   const { id } = Route.useParams()
@@ -16,7 +20,8 @@ function BookPage() {
   const { book, isPending } = useBook(id)
   if (isPending) return null
   if (!book) return <Navigate to="/" replace />
-  const tbr = status(book) === 'tbr'
+  const st = status(book)
+  const d = depth(book.page)
 
   return (
     <>
@@ -26,16 +31,24 @@ function BookPage() {
           Edit
         </Link>
       </TopBar>
-      <div className="flow-root border-b pt-1 pb-4">
-        {hasCover(book.cover) && (
-          <Spine cover={book.cover} seed={book.title + book.author} className="float-right mt-1 mb-2 ml-4 h-auto w-[76px] shadow-[0_2px_8px_-2px_rgb(0_0_0/0.3)]" />
-        )}
-        <h2 className="mb-1 font-serif text-[28px] leading-tight font-medium text-balance">{book.title}</h2>
-        <div className="text-muted-foreground">{book.author}</div>
-        <div className="mt-2 text-[13px] text-muted-foreground tabular-nums">{dateRange(book) || 'To be read'}</div>
-        {tbr && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="lg" className="rounded-full px-4" onClick={() => saveBook(user.id, { ...book, start: today() })}>
+      <div className="border-b pt-2 pb-5">
+        <div className="flex gap-5">
+          <div className="min-w-0 flex-1">
+            <Eyebrow className="text-primary">{st === 'reading' ? 'Reading now' : st === 'read' ? 'Read' : book.owned ? 'To read · On shelf' : 'To read · Not on shelf'}</Eyebrow>
+            <h2 className="mt-2 font-serif text-[30px] leading-[1.08] tracking-tight text-balance">{book.title}</h2>
+            <div className="mt-1.5 text-muted-foreground">{book.author}</div>
+            <div className="mt-3 flex items-center gap-2.5 text-[12.5px] text-muted-foreground tabular-nums">
+              <DepthMark book={book} size={30} />
+              {[dateRange(book) || 'Not started', d.quotes && plural(d.quotes, 'quote'), d.notes && plural(d.notes, 'note')].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          {hasCover(book.cover) && (
+            <Spine cover={book.cover} seed={book.title + book.author} className="h-auto w-[84px] self-start shadow-[0_2px_8px_-2px_rgb(0_0_0/0.3)]" />
+          )}
+        </div>
+        {st === 'tbr' && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Button size="lg" className="rounded-full px-4" onClick={() => saveBook(user.id, { ...book, start: today() })}>
               Start reading
             </Button>
             <Segmented

@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
-import { Route as MockupsRouteImport } from './routes/mockups'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedAccountRouteImport } from './routes/_authed/account'
@@ -20,11 +19,6 @@ import { Route as AuthedBookIdEditRouteImport } from './routes/_authed/book.$id_
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MockupsRoute = MockupsRouteImport.update({
-  id: '/mockups',
-  path: '/mockups',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -60,7 +54,6 @@ const AuthedBookIdEditRoute = AuthedBookIdEditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
-  '/mockups': typeof MockupsRoute
   '/sign-in': typeof SignInRoute
   '/account': typeof AuthedAccountRoute
   '/new': typeof AuthedNewRoute
@@ -68,7 +61,6 @@ export interface FileRoutesByFullPath {
   '/book/$id/edit': typeof AuthedBookIdEditRoute
 }
 export interface FileRoutesByTo {
-  '/mockups': typeof MockupsRoute
   '/sign-in': typeof SignInRoute
   '/account': typeof AuthedAccountRoute
   '/new': typeof AuthedNewRoute
@@ -79,7 +71,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
-  '/mockups': typeof MockupsRoute
   '/sign-in': typeof SignInRoute
   '/_authed/account': typeof AuthedAccountRoute
   '/_authed/new': typeof AuthedNewRoute
@@ -90,26 +81,12 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/mockups'
-    | '/sign-in'
-    | '/account'
-    | '/new'
-    | '/book/$id'
-    | '/book/$id/edit'
+    '/' | '/sign-in' | '/account' | '/new' | '/book/$id' | '/book/$id/edit'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/mockups'
-    | '/sign-in'
-    | '/account'
-    | '/new'
-    | '/'
-    | '/book/$id'
-    | '/book/$id/edit'
+  to: '/sign-in' | '/account' | '/new' | '/' | '/book/$id' | '/book/$id/edit'
   id:
     | '__root__'
     | '/_authed'
-    | '/mockups'
     | '/sign-in'
     | '/_authed/account'
     | '/_authed/new'
@@ -120,7 +97,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
-  MockupsRoute: typeof MockupsRoute
   SignInRoute: typeof SignInRoute
 }
 
@@ -131,13 +107,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mockups': {
-      id: '/mockups'
-      path: '/mockups'
-      fullPath: '/mockups'
-      preLoaderRoute: typeof MockupsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -206,7 +175,6 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
-  MockupsRoute: MockupsRoute,
   SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport

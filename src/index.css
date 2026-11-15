@@ -26,6 +26,8 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-olive-soft: var(--olive-soft);
+    --color-contour: var(--contour);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -35,50 +37,55 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Mullon's palette: warm paper in light mode, warm charcoal in dark mode, following the system setting. */
+/* Mullon's palette: warm paper in light mode and a dark olive night in dark mode, both with an olive accent,
+   following the system setting. --olive-soft washes the last-quote panel; --contour draws the depth marks. */
 :root {
-    --background: #faf9f6;
-    --foreground: #1c1b19;
-    --card: #faf9f6;
-    --card-foreground: #1c1b19;
-    --popover: #faf9f6;
-    --popover-foreground: #1c1b19;
-    --primary: #1c1b19;
-    --primary-foreground: #faf9f6;
-    --secondary: #efede7;
-    --secondary-foreground: #1c1b19;
-    --muted: #efede7;
-    --muted-foreground: #6f6c66;
-    --accent: #efede7;
-    --accent-foreground: #1c1b19;
+    --background: #f3efe2;
+    --foreground: #1f2019;
+    --card: #f8f5ec;
+    --card-foreground: #1f2019;
+    --popover: #f8f5ec;
+    --popover-foreground: #1f2019;
+    --primary: #5b6b26;
+    --primary-foreground: #f8f5ec;
+    --secondary: #e9e5d6;
+    --secondary-foreground: #1f2019;
+    --muted: #e9e5d6;
+    --muted-foreground: #6c6a5b;
+    --accent: #e4e7cc;
+    --accent-foreground: #3d4816;
     --destructive: #b3261e;
-    --border: #e6e3dc;
-    --input: #dcd8cf;
-    --ring: #4a7bd0;
+    --border: #ddd8c6;
+    --input: #d4cfbb;
+    --ring: #7a8a3c;
+    --olive-soft: #e4e7cc;
+    --contour: #6f7f33;
     --radius: 0.625rem;
     color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --background: #151514;
-        --foreground: #ecebe7;
-        --card: #1b1b19;
-        --card-foreground: #ecebe7;
-        --popover: #1e1e1c;
-        --popover-foreground: #ecebe7;
-        --primary: #ecebe7;
-        --primary-foreground: #151514;
-        --secondary: #232220;
-        --secondary-foreground: #ecebe7;
-        --muted: #232220;
-        --muted-foreground: #9a978f;
-        --accent: #2a2927;
-        --accent-foreground: #ecebe7;
+        --background: #181a15;
+        --foreground: #e8e6d8;
+        --card: #1f221b;
+        --card-foreground: #e8e6d8;
+        --popover: #23261e;
+        --popover-foreground: #e8e6d8;
+        --primary: #b3c06e;
+        --primary-foreground: #181a15;
+        --secondary: #262920;
+        --secondary-foreground: #e8e6d8;
+        --muted: #262920;
+        --muted-foreground: #9b9a89;
+        --accent: #2c3220;
+        --accent-foreground: #d5df9a;
         --destructive: #f2867e;
-        --border: #2e2d2a;
-        --input: #3a3935;
-        --ring: #6f9be0;
+        --border: #2f3229;
+        --input: #3a3d32;
+        --ring: #b3c06e;
+        --olive-soft: #262c1b;
+        --contour: #a9b765;
     }
 }
 
@@ -104,16 +111,29 @@
   }
 }
 
-/* The book page's notes: paragraphs, and quotes set in the serif. */
+/* The book page's notes: paragraphs, and quotes set in the serif and numbered like figures. */
 @layer components {
+  .notes { counter-reset: fig; }
   .notes p, .notes div { margin: 0 0 14px; }
   .notes blockquote {
+    counter-increment: fig;
     margin: 22px 0;
     padding: 2px 0 2px 18px;
-    border-left: 2px solid var(--foreground);
+    border-left: 2px solid var(--primary);
     font-family: var(--font-serif);
     font-size: 19px;
     line-height: 1.55;
     font-style: italic;
+  }
+  .notes blockquote::before {
+    content: "Fig. " counter(fig);
+    display: block;
+    margin-bottom: 2px;
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-style: normal;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--primary);
   }
 }

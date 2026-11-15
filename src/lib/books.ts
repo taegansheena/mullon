@@ -107,3 +107,18 @@ export const sanitize = (html: string) => {
   walk(src.content, out)
   return out.innerHTML
 }
+
+/** How much is written on a book's page: quotes kept, and paragraphs of notes. */
+export const depth = (html: string) => {
+  const quotes = quoteCount(html)
+  const notes = (html.match(/<p>(?!(<br>)*<\/p>)/g) || []).length
+  return { quotes, notes, total: quotes + notes }
+}
+
+/** The last thing written on a book's page, quote or note: its bottom block, since the page keeps no time per paragraph. */
+export const lastEntry = (html: string): { kind: 'quote' | 'note'; text: string } | undefined => {
+  const t = document.createElement('template')
+  t.innerHTML = html.replace(/<br>/g, ' ')
+  const el = [...t.content.children].reverse().find((e) => e.textContent!.trim())
+  return el && { kind: el.tagName === 'BLOCKQUOTE' ? 'quote' : 'note', text: el.textContent!.trim() }
+}
