@@ -1,0 +1,77 @@
+/* Mockup themes: warm paper and a night theme, both with an olive accent. Scoped to the mock, so the app is unchanged. */
+.mock-paper {
+  --background: #f3efe2;
+  --foreground: #1f2019;
+  --card: #f8f5ec;
+  --card-foreground: #1f2019;
+  --popover: #f8f5ec;
+  --popover-foreground: #1f2019;
+  --primary: #5b6b26;
+  --primary-foreground: #f8f5ec;
+  --secondary: #e9e5d6;
+  --secondary-foreground: #1f2019;
+  --muted: #e9e5d6;
+  --muted-foreground: #6c6a5b;
+  --accent: #e4e7cc;
+  --accent-foreground: #3d4816;
+  --border: #ddd8c6;
+  --input: #d4cfbb;
+  --ring: #7a8a3c;
+  --olive-soft: #e4e7cc;
+  --contour: #6f7f33;
+  color-scheme: light;
+}
+
+.mock-night {
+  --background: #181a15;
+  --foreground: #e8e6d8;
+  --card: #1f221b;
+  --card-foreground: #e8e6d8;
+  --popover: #23261e;
+  --popover-foreground: #e8e6d8;
+  --primary: #b3c06e;
+  --primary-foreground: #181a15;
+  --secondary: #262920;
+  --secondary-foreground: #e8e6d8;
+  --muted: #262920;
+  --muted-foreground: #9b9a89;
+  --accent: #2c3220;
+  --accent-foreground: #d5df9a;
+  --border: #2f3229;
+  --input: #3a3d32;
+  --ring: #b3c06e;
+  --olive-soft: #262c1b;
+  --contour: #a9b765;
+  color-scheme: dark;
+}
+
+.mock-paper, .mock-night {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Notes with each quote numbered like a figure in the margin. */
+.mock-notes { counter-reset: fig; }
+.mock-notes p { margin: 0 0 14px; }
+.mock-notes blockquote {
+  counter-increment: fig;
+  position: relative;
+  margin: 22px 0;
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--primary);
+  font-family: var(--font-serif);
+  font-size: 19px;
+  line-height: 1.55;
+  font-style: italic;
+}
+.mock-notes blockquote::before {
+  content: "Fig. " counter(fig);
+  display: block;
+  margin-bottom: 2px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
