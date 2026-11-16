@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { cn } from 'cn'
-import { ChevronDown, MoreHorizontal, Plus, Search } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, Search } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { DepthMark } from '@/components/depth-mark'
 import { Eyebrow } from '@/components/eyebrow'
@@ -14,7 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUser } from '@/lib/auth'
-import { type Book, dateRange, depth, lastEntry, sanitize, status, type Status, today } from '@/lib/books'
+import { type Book, dateRange, depth, lastEntry, quotes, sanitize, status, type Status, today } from '@/lib/books'
 import { saveBook, saveBooks, useBooks } from '@/lib/queries'
 
 type Show = Status | 'all'
@@ -125,6 +125,8 @@ function List() {
         </Link>
       </TopBar>
 
+      {show === 'all' && !q && all && <QuoteOfTheDay books={all} />}
+
       {isPending ? (
         <div className="pt-4">
           {[0, 1, 2, 3].map((i) => (
@@ -185,6 +187,72 @@ function List() {
         <Plus className="size-6" />
       </Link>
     </>
+  )
+}
+
+// A well-mixed 32-bit hash (FNV-1a, then MurmurHash3's finalizer), so each day's order is a fresh shuffle.
+const hash = (s: string) => {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b)
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35)
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+const QUOTE_KEY = 'mullon:quote-of-the-day'
+type Picked = { day: string; key: string }
+
+/**
+ * A quote from a book not being read, the same all day. Each day shuffles every quote by date; the day's quote is
+ * the first, and Previous and Next step through the rest. The quote showing is kept on the device until the next day,
+ * so reopening the app shows it again, and quotes added during the day don't change it.
+ */
+function QuoteOfTheDay({ books }: { books: Book[] }) {
+  const day = today()
+  const order = books
+    .filter((b) => status(b) !== 'reading')
+    .flatMap((b) => quotes(b.page).map((text) => ({ book: b, text, key: `${b.id}\n${text}` })))
+    .map((x) => ({ ...x, rank: hash(`${day}\n${x.key}`) }))
+    .sort((x, y) => x.rank - y.rank)
+  const [picked, setPicked] = useState<Picked | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(QUOTE_KEY) ?? 'null')
+    } catch {
+      return null
+    }
+  })
+  const i = Math.max(picked?.day === day ? order.findIndex((x) => x.key === picked.key) : -1, 0)
+  const quote = order[i]
+  const key = quote?.key
+
+  useEffect(() => {
+    if (key) localStorage.setItem(QUOTE_KEY, JSON.stringify({ day, key } satisfies Picked))
+  }, [day, key])
+
+  if (!quote) return null
+  const go = (d: number) => setPicked({ day, key: order[(i + d + order.length) % order.length].key })
+  return (
+    <section className="pt-3 pb-3">
+      <div className="flex min-h-9 items-center justify-between">
+        <Eyebrow className="text-primary">Quote of the day</Eyebrow>
+        {order.length > 1 && (
+          <span className="-mr-2 flex">
+            <Button variant="ghost" size="icon-lg" aria-label="Previous quote" onClick={() => go(-1)}>
+              <ChevronLeft className="size-5" />
+            </Button>
+            <Button variant="ghost" size="icon-lg" aria-label="Next quote" onClick={() => go(1)}>
+              <ChevronRight className="size-5" />
+            </Button>
+          </span>
+        )}
+      </div>
+      <blockquote aria-live="polite" className="mt-1 border-l-2 border-primary py-0.5 pl-[18px] font-serif text-[19px] leading-[1.55] whitespace-pre-line text-pretty italic">
+        {quote.text}
+      </blockquote>
+      <Link to="/book/$id" params={{ id: quote.book.id }} className="group mt-2.5 ml-5 inline-block text-[13px]">
+        <span className="font-serif text-[15px] group-hover:underline">{quote.book.title}</span> <span className="text-muted-foreground">{quote.book.author}</span>
+      </Link>
+    </section>
   )
 }
 

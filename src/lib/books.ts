@@ -115,6 +115,13 @@ export const depth = (html: string) => {
   return { quotes, notes, total: quotes + notes }
 }
 
+/** The quotes on a book's page, as text with their line breaks. */
+export const quotes = (html: string) => {
+  const t = document.createElement('template')
+  t.innerHTML = html.replace(/<br>/g, '\n')
+  return [...t.content.querySelectorAll('blockquote')].map((q) => q.textContent!.trim()).filter(Boolean)
+}
+
 /** The last thing written on a book's page, quote or note: its bottom block, since the page keeps no time per paragraph. */
 export const lastEntry = (html: string): { kind: 'quote' | 'note'; text: string } | undefined => {
   const t = document.createElement('template')
