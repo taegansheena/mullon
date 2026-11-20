@@ -135,9 +135,11 @@ function NotesEditor({ book, userId }: { book: Book; userId: string }) {
     const onSel = () => {
       const k = currentBlock()
       if (k) setBlock(k)
+      revealCaret()
     }
     document.addEventListener('selectionchange', onSel)
     return () => document.removeEventListener('selectionchange', onSel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const format = (k: 'note' | 'quote') => {
@@ -177,14 +179,40 @@ function NotesEditor({ book, userId }: { book: Book; userId: string }) {
     saveSoon()
   }
 
-  // Keep the Note/Quote bar above the on-screen keyboard.
-  const [keyboard, setKeyboard] = useState(0)
+  // Keep the line being written above the Note/Quote bar. iOS only scrolls it above the keyboard, which the bar sits on.
+  const bar = useRef<HTMLDivElement>(null)
+  const revealCaret = () => {
+    const s = getSelection()
+    if (!s?.isCollapsed || !page.current!.contains(s.focusNode)) return
+    const n = s.focusNode!
+    // An empty line has no caret box, so use its paragraph's.
+    const caret = s.getRangeAt(0).getClientRects()[0] ?? (n instanceof Element ? n : n.parentElement!).getBoundingClientRect()
+    const hidden = caret.bottom + 12 - bar.current!.getBoundingClientRect().top
+    if (hidden > 0) scrollBy(0, hidden)
+  }
+
+  // Sit the bar on top of the on-screen keyboard. iOS leaves the bottom of the page, where fixed elements are placed,
+  // under the keyboard and moves the visible area over the page as it scrolls, so follow the visible area's bottom.
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
-    const onResize = () => setKeyboard(Math.max(0, innerHeight - vv.height - vv.offsetTop))
+    const place = () => {
+      bar.current!.style.top = `${vv.offsetTop + vv.height}px`
+      // With the keyboard up, the home indicator is behind it, so drop the room kept for it.
+      bar.current!.style.paddingBottom = vv.height < document.documentElement.clientHeight - 100 ? '8px' : ''
+    }
+    const onResize = () => {
+      place()
+      revealCaret()
+    }
+    place()
     vv.addEventListener('resize', onResize)
-    return () => vv.removeEventListener('resize', onResize)
+    vv.addEventListener('scroll', place)
+    return () => {
+      vv.removeEventListener('resize', onResize)
+      vv.removeEventListener('scroll', place)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -216,7 +244,7 @@ function NotesEditor({ book, userId }: { book: Book; userId: string }) {
           }}
         />
       </div>
-      <div className="fixed inset-x-0 z-20 border-t bg-background px-3 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]" style={{ bottom: keyboard }}>
+      <div ref={bar} className="fixed inset-x-0 top-full z-20 -translate-y-full border-t bg-background px-3 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-[680px] items-center gap-2">
           <Segmented
             label="Paragraph style"
