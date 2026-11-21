@@ -193,24 +193,60 @@ function NotesEditor({ book, userId }: { book: Book; userId: string }) {
 
   // Sit the bar on top of the on-screen keyboard. iOS leaves the bottom of the page, where fixed elements are placed,
   // under the keyboard and moves the visible area over the page as it scrolls, so follow the visible area's bottom.
+  // iOS moves the page before the bar can follow, so while a finger scrolls the page the bar hides, and it comes back on
+  // the keyboard once scrolling stops.
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
+    const keyboardUp = () => vv.height < document.documentElement.clientHeight - 100
     const place = () => {
       bar.current!.style.top = `${vv.offsetTop + vv.height}px`
       // With the keyboard up, the home indicator is behind it, so drop the room kept for it.
-      bar.current!.style.paddingBottom = vv.height < document.documentElement.clientHeight - 100 ? '8px' : ''
+      bar.current!.style.paddingBottom = keyboardUp() ? '8px' : ''
     }
+    let touching = false
+    let hidden = false
+    let settle: ReturnType<typeof setTimeout> | undefined
+    const showSoon = () => {
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        if (touching) return
+        hidden = false
+        place()
+        bar.current!.style.opacity = ''
+      }, 150)
+    }
+    const onTouchMove = () => {
+      touching = true
+      if (!keyboardUp()) return
+      hidden = true
+      bar.current!.style.opacity = '0'
+      showSoon()
+    }
+    const onTouchEnd = () => {
+      touching = false
+      if (hidden) showSoon()
+    }
+    const onScroll = () => (hidden ? showSoon() : place())
     const onResize = () => {
       place()
       revealCaret()
     }
     place()
     vv.addEventListener('resize', onResize)
-    vv.addEventListener('scroll', place)
+    vv.addEventListener('scroll', onScroll)
+    addEventListener('scroll', onScroll)
+    addEventListener('touchmove', onTouchMove, { passive: true })
+    addEventListener('touchend', onTouchEnd)
+    addEventListener('touchcancel', onTouchEnd)
     return () => {
+      clearTimeout(settle)
       vv.removeEventListener('resize', onResize)
-      vv.removeEventListener('scroll', place)
+      vv.removeEventListener('scroll', onScroll)
+      removeEventListener('scroll', onScroll)
+      removeEventListener('touchmove', onTouchMove)
+      removeEventListener('touchend', onTouchEnd)
+      removeEventListener('touchcancel', onTouchEnd)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -244,7 +280,7 @@ function NotesEditor({ book, userId }: { book: Book; userId: string }) {
           }}
         />
       </div>
-      <div ref={bar} className="fixed inset-x-0 top-full z-20 -translate-y-full border-t bg-background px-3 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
+      <div ref={bar} className="fixed inset-x-0 top-full z-20 -translate-y-full border-t transition-opacity duration-150 bg-background px-3 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-[680px] items-center gap-2">
           <Segmented
             label="Paragraph style"
