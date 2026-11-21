@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { DepthMark } from '@/components/depth-mark'
 import { Eyebrow } from '@/components/eyebrow'
 import { Segmented } from '@/components/segmented'
@@ -46,6 +47,19 @@ function BookPage() {
             <Spine cover={book.cover} seed={book.title + book.author} className="h-auto w-[84px] self-start shadow-[0_2px_8px_-2px_rgb(0_0_0/0.3)]" />
           )}
         </div>
+        {st === 'reading' && (
+          <Button
+            size="lg"
+            variant="outline"
+            className="mt-4 rounded-full px-4"
+            onClick={() => {
+              saveBook(user.id, { ...book, end: today() })
+              toast.success(`Finished ${book.title}.`, { action: { label: 'Undo', onClick: () => saveBook(user.id, { ...book, end: '' }) } })
+            }}
+          >
+            Finished it
+          </Button>
+        )}
         {st === 'tbr' && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button size="lg" className="rounded-full px-4" onClick={() => saveBook(user.id, { ...book, start: today() })}>

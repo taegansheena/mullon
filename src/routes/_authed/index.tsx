@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUser } from '@/lib/auth'
 import { type Book, dateRange, depth, lastEntry, quotes, sanitize, status, type Status, today } from '@/lib/books'
-import { saveBook, saveBooks, useBooks } from '@/lib/queries'
+import { saveBooks, useBooks } from '@/lib/queries'
 
 type Show = Status | 'all'
 const shows: [Show, string][] = [
@@ -199,6 +199,15 @@ const hash = (s: string) => {
   return (h ^ (h >>> 16)) >>> 0
 }
 
+/**
+ * Where to shorten a long quote: after its 40th word, or 0 to show it whole. A quote of up to 55 words shows whole,
+ * so opening it never reveals only a few more words.
+ */
+const shortenAt = (text: string) => {
+  const words = [...text.matchAll(/\S+/g)]
+  return words.length > 55 ? words[39].index + words[39][0].length : 0
+}
+
 const QUOTE_KEY = 'mullon:quote-of-the-day'
 type Picked = { day: string; key: string }
 
@@ -224,6 +233,9 @@ function QuoteOfTheDay({ books }: { books: Book[] }) {
   const i = Math.max(picked?.day === day ? order.findIndex((x) => x.key === picked.key) : -1, 0)
   const quote = order[i]
   const key = quote?.key
+  // The quote whose whole text is showing; stepping to another quote shows that one shortened again.
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const cut = quote ? shortenAt(quote.text) : 0
 
   useEffect(() => {
     if (key) localStorage.setItem(QUOTE_KEY, JSON.stringify({ day, key } satisfies Picked))
@@ -234,7 +246,7 @@ function QuoteOfTheDay({ books }: { books: Book[] }) {
   return (
     <section className="pt-3 pb-3">
       <div className="flex min-h-9 items-center justify-between">
-        <Eyebrow className="text-primary">Quote of the day</Eyebrow>
+        <Eyebrow className="text-primary">Gleanings</Eyebrow>
         {order.length > 1 && (
           <span className="-mr-2 flex">
             <Button variant="ghost" size="icon-lg" aria-label="Previous quote" onClick={() => go(-1)}>
@@ -247,8 +259,14 @@ function QuoteOfTheDay({ books }: { books: Book[] }) {
         )}
       </div>
       <blockquote aria-live="polite" className="mt-1 border-l-2 border-primary py-0.5 pl-[18px] font-serif text-[19px] leading-[1.55] whitespace-pre-line text-pretty italic">
-        {quote.text}
+        {cut && expanded !== key ? `${quote.text.slice(0, cut).trimEnd()}…` : quote.text}
       </blockquote>
+      {cut > 0 && (
+        <Button variant="ghost" size="sm" className="mt-1 ml-2.5 text-muted-foreground" onClick={() => setExpanded(expanded === key ? null : key)}>
+          {expanded === key ? 'Show less' : 'Read the whole quote'}
+          <ChevronDown className={cn('transition-transform', expanded === key && 'rotate-180')} />
+        </Button>
+      )}
       <Link to="/book/$id" params={{ id: quote.book.id }} className="group mt-2.5 ml-5 inline-block text-[13px]">
         <span className="font-serif text-[15px] group-hover:underline">{quote.book.title}</span> <span className="text-muted-foreground">{quote.book.author}</span>
       </Link>
@@ -298,45 +316,32 @@ function Counts({ book, className }: { book: Book; className?: string }) {
 
 const fmtDay = (d: string) => new Date(d + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 
-/** A book being read: its cover and depth, the last thing written about it, and a way to mark it finished. */
+/** A book being read, linking to its page: its cover and depth, and the last thing written about it. */
 function ReadingCard({ book: b }: { book: Book }) {
-  const user = useUser()!
   const last = lastEntry(b.page)
-  const finish = () => {
-    saveBook(user.id, { ...b, end: today() })
-    toast.success(`Finished ${b.title}.`, { action: { label: 'Undo', onClick: () => saveBook(user.id, { ...b, end: '' }) } })
-  }
   return (
-    <Card className="gap-0 p-0 ring-border">
-      <Link to="/book/$id" params={{ id: b.id }} className="group flex gap-4 p-4">
-        <Spine cover={b.cover} seed={b.title + b.author} className="h-[96px] w-[64px] shadow-[0_2px_8px_-2px_rgb(0_0_0/0.3)]" />
-        <span className="min-w-0 flex-1">
-          <Eyebrow>Since {fmtDay(b.start)}</Eyebrow>
-          <span className="mt-1 block font-serif text-[21px] leading-tight text-balance group-hover:underline">{b.title}</span>
-          <span className="mt-0.5 block text-[13px] text-muted-foreground">{b.author}</span>
+    <Link to="/book/$id" params={{ id: b.id }} className="group block rounded-xl">
+      <Card className="gap-0 p-0 ring-border transition-colors group-hover:ring-foreground/25">
+        <span className="flex gap-4 p-4">
+          <Spine cover={b.cover} seed={b.title + b.author} className="h-[96px] w-[64px] shadow-[0_2px_8px_-2px_rgb(0_0_0/0.3)]" />
+          <span className="min-w-0 flex-1">
+            <Eyebrow>Since {fmtDay(b.start)}</Eyebrow>
+            <span className="mt-1 block font-serif text-[21px] leading-tight text-balance group-hover:underline">{b.title}</span>
+            <span className="mt-0.5 block text-[13px] text-muted-foreground">{b.author}</span>
+          </span>
+          <span className="flex w-[64px] flex-none flex-col items-center gap-1">
+            <DepthMark book={b} size={56} />
+            <Counts book={b} />
+          </span>
         </span>
-        <span className="flex w-[64px] flex-none flex-col items-center gap-1">
-          <DepthMark book={b} size={56} />
-          <Counts book={b} />
-        </span>
-      </Link>
-      {last && (
-        <div className="mx-4 mb-4 rounded-md bg-olive-soft px-4 py-3">
-          <Eyebrow className="text-primary">Your last {last.kind}</Eyebrow>
-          <p className={cn('mt-1 line-clamp-4 text-[15px] leading-relaxed text-pretty', last.kind === 'quote' && 'font-serif italic')}>{last.text}</p>
-        </div>
-      )}
-      <div className="flex items-center gap-2 border-t px-4 py-2.5">
-        <Link to="/book/$id" params={{ id: b.id }} className={buttonVariants({ size: 'sm' })}>
-          Open notes
-        </Link>
-        <Button size="sm" variant="ghost" onClick={finish}>
-          Finished it
-        </Button>
-        <span className="flex-1" />
-        <span className="hidden text-[11.5px] text-muted-foreground tabular-nums sm:inline">{dateRange(b)}</span>
-      </div>
-    </Card>
+        {last && (
+          <div className="mx-4 mb-4 rounded-md bg-olive-soft px-4 py-3">
+            <Eyebrow className="text-primary">Your last {last.kind}</Eyebrow>
+            <p className={cn('mt-1 line-clamp-4 text-[15px] leading-relaxed text-pretty', last.kind === 'quote' && 'font-serif italic')}>{last.text}</p>
+          </div>
+        )}
+      </Card>
+    </Link>
   )
 }
 
